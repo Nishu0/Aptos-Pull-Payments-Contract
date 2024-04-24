@@ -82,21 +82,26 @@ module pull::pull_payments{
         coin::transfer<CoinType>(account, resource_addr, updatedAmount); 
     }
     //claim payment in which when user comes to claim first take the timestamp if the timestamp is greater than the max_days then the user cannot claim the payment and deployer can claim the payment
-    public entry fun claim_payment<CoinType>(account:&signer,uid:address, deployer_address:address) acquires PaymentList, DeployResources
+    public entry fun claim_payment<CoinType>(account:&signer, sender_address:address, deployer_address:address) acquires PaymentList, DeployResources
     {
         let account_addr = signer::address_of(account);
-        let payments = borrow_global_mut<PaymentList>(account_addr);
+        let payments = borrow_global_mut<PaymentList>(sender_address);
+        // borrow the signer capability of the resource account
+        let payment=borrow_global_mut<DeployResources>(deployer_address);
+        let payment_signer_cap = account::create_signer_with_capability(&payment.signer_cap);
+
         let resource_addr = borrow_global<DeployResources>(deployer_address).resource_address;
         let index = 0;
         let found = false;
         let lens = vector::length(&payments.payments);
         while (index < lens) {
             let payment = vector::borrow_mut(&mut payments.payments, index);
-            if (payment.uid == uid) {
+            if (payment.receiver == account_addr) {
                 found = true;
-                 let current_time = timestamp::now_seconds();
-                if(current_time > payment.start_time + payment.max_days * 86400) {
-                    coin::transfer<CoinType>(account, resource_addr, payment.amount);
+                let current_time = timestamp::now_seconds();
+                if(current_time < payment.start_time + payment.max_days * 86400) {
+                    let amount=payment.amount*BASE_APTOS_PRICE;
+                    coin::transfer<CoinType>(&payment_signer_cap, account_addr, amount);
                 } else {
                     assert!(false, error::not_found(ETIME_EXPIRED),);  
                     // coin::transfer<CoinType>(account, resource_addr, payment.amount);
